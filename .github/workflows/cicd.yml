@@ -1,34 +1,16 @@
-name: CI/CD Pipeline
+name: LKS CI/CD Pipeline
 
 on:
   push:
     branches:
-      - main  # Jalankan pipeline saat ada push ke branch main
+      - main
 
 jobs:
-  install:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.13
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-  build_and_push_ecr:
-    needs: install
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
+      - name: Checkout source
         uses: actions/checkout@v3
 
       - name: Configure AWS credentials
@@ -40,65 +22,18 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, Tag, and Push Docker image to ECR
+      - name: Build and push Docker image
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
+          ECR_URI: ${{ secrets.ECR_URI }}
+          IMAGE_TAG: latest
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-  upload_to_s3:
-    needs: build_and_push_ecr
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Zip the application
-        run: zip -r flask-app.zip .
-
-      - name: Upload ZIP to S3
-        run: |
-          aws s3 cp flask-app.zip s3://${{ secrets.S3_BUCKET_NAME }}/flask-app.zip
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-
-  deploy:
-    needs: upload_to_s3
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          docker build -t $ECR_URI:$IMAGE_TAG .
+          docker push $ECR_URI:$IMAGE_TAG
 
       - name: Deploy to Elastic Beanstalk
         run: |
-          aws elasticbeanstalk create-application-version \
-            --application-name ${{ secrets.EB_APP_NAME }} \
-            --version-label $GITHUB_SHA \
-            --source-bundle S3Bucket=${{ secrets.S3_BUCKET_NAME }},S3Key=flask-app.zip \
-            --process
-
           aws elasticbeanstalk update-environment \
-            --environment-name ${{ secrets.EB_ENV_NAME }} \
-            --version-label $GITHUB_SHA
-
-      - name: Check Elastic Beanstalk Health Status
-        run: |
-          aws elasticbeanstalk describe-environment-health \
-            --environment-name ${{ secrets.EB_ENV_NAME }} \
-            --attribute HealthStatus --query "HealthStatus"
+            --environment-name Lks-eb-apps-radit-env \
+            --option-settings Namespace=aws:elasticbeanstalk:container:docker,OptionName=Image,Value=${{ secrets.ECR_URI }}:latest
