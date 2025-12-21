@@ -2,13 +2,7 @@
 LICENSE
 .env
 .env.*
-
-app.py_
-
-
-Dockerrun.aws.json
 Cloudformation/*
-
 modul2.yaml
 
-LICENSE
+!Dockerrun.aws.json
