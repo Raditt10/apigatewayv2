@@ -1,4 +1,4 @@
-name: LKS CI/CD Pipeline
+name: CI/CD Pipeline
 
 on:
   push:
@@ -6,12 +6,11 @@ on:
       - main
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -24,16 +23,28 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push Docker image
+      - name: Build & Push Docker Image
         env:
           ECR_URI: ${{ secrets.ECR_URI }}
-          IMAGE_TAG: latest
         run: |
-          docker build -t $ECR_URI:$IMAGE_TAG .
-          docker push $ECR_URI:$IMAGE_TAG
+          docker build -t $ECR_URI:latest .
+          docker push $ECR_URI:latest
+
+      - name: Zip application
+        run: |
+          zip -r app.zip Dockerrun.aws.json
+
+      - name: Upload to S3
+        run: |
+          aws s3 cp app.zip s3://${{ secrets.S3_BUCKET }}/app.zip
 
       - name: Deploy to Elastic Beanstalk
         run: |
+          aws elasticbeanstalk create-application-version \
+            --application-name lks-eb-apps-namamu \
+            --version-label $GITHUB_SHA \
+            --source-bundle S3Bucket=${{ secrets.S3_BUCKET }},S3Key=app.zip
+
           aws elasticbeanstalk update-environment \
             --environment-name Lks-eb-apps-radit-env \
-            --option-settings Namespace=aws:elasticbeanstalk:container:docker,OptionName=Image,Value=${{ secrets.ECR_URI }}:latest
+            --version-label $GITHUB_SHA
