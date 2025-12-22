@@ -41,10 +41,10 @@ jobs:
       - name: Deploy to Elastic Beanstalk
         run: |
           aws elasticbeanstalk create-application-version \
-            --application-name Lks-eb-apps-radit \
+            --application-name lks-app \
             --version-label $GITHUB_SHA \
             --source-bundle S3Bucket=${{ secrets.S3_BUCKET }},S3Key=app.zip
 
           aws elasticbeanstalk update-environment \
-            --environment-name Lks-eb-apps-radit-env \
+            --environment-name lks-eb-apps-radit \
             --version-label $GITHUB_SHA
