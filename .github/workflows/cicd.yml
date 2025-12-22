@@ -65,7 +65,8 @@ jobs:
 
       - name: Upload ZIP to S3
         run: |
-          aws s3 cp flask-app.zip s3://${{ secrets.S3_BUCKET_NAME }}/flask-app.zip
+         aws s3 cp flask-app.zip s3://${{ secrets.S3_BUCKET_NAME }}/flask-app.zip --region ${{ secrets.AWS_REGION }}
+
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
