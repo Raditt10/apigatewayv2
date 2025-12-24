@@ -16,7 +16,7 @@ AWS_REGION = os.getenv("AWS_REGION")
 S3_BUCKET = os.getenv("S3_BUCKET_NAME")
 API_URL = os.getenv("API_GATEWAY_URL")
 
-# trigger lagi 2
+# trigger lagi 3
 s3_client = boto3.client(
     "s3",
     aws_access_key_id=AWS_ACCESS_KEY_ID,
