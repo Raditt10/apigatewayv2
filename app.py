@@ -8,7 +8,7 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Konfigurasi AWS 
+# Konfigurasi AWS
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_SESSION_TOKEN = os.getenv("AWS_SESSION_TOKEN")
@@ -16,6 +16,8 @@ AWS_REGION = os.getenv("AWS_REGION")
 S3_BUCKET = os.getenv("S3_BUCKET_NAME")
 API_URL = os.getenv("API_GATEWAY_URL")
 
+# Inisialisasi S3 Client
+# Pastikan Credentials di Elastic Beanstalk Config SELALU UPDATE (Fresh Token)
 s3_client = boto3.client(
     "s3",
     aws_access_key_id=AWS_ACCESS_KEY_ID,
@@ -26,9 +28,21 @@ s3_client = boto3.client(
 
 @app.route("/")
 def index():
-    response = requests.get(API_URL)
-    users = response.json()
-    return render_template("index.html", users=users, s3_bucket=f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/")
+    try:
+        response = requests.get(API_URL)
+        # Jika API Gateway mengembalikan error, user list kosong dulu agar tidak crash
+        if response.status_code != 200:
+            users = []
+            print(f"⚠️ Error fetching users: {response.text}")
+        else:
+            users = response.json()
+    except Exception as e:
+        users = []
+        print(f"❌ Connection error to API Gateway: {e}")
+
+    # Perbaikan format URL S3 agar konsisten
+    s3_base_url = f"https://{S3_BUCKET}.s3.amazonaws.com/"
+    return render_template("index.html", users=users, s3_bucket=s3_base_url)
 
 @app.route("/users", methods=["POST"])
 def add_user():
@@ -39,24 +53,27 @@ def add_user():
     phone = request.form["phone"]
     image = request.files["image"]
 
-    # 1️⃣ Cek apakah email sudah ada di database
-    check_response = requests.get(f"{API_URL}?email={email}")
-    
-    if check_response.status_code == 409:  # Jika email sudah ada
-        print("❌ Email already exists, stopping process")  # Debugging log
-        return jsonify({"error": "Email already exists"}), 409
+    # 1️⃣ Cek apakah email sudah ada di database via API Gateway
+    try:
+        check_response = requests.get(f"{API_URL}?email={email}")
+        if check_response.status_code == 409:
+            return jsonify({"error": "Email already exists"}), 409
+    except Exception as e:
+        print(f"⚠️ Warning: Skip email check due to error: {e}")
 
-    # 2️⃣ Jika email belum ada, lanjut upload gambar
+    # 2️⃣ Upload Gambar ke S3
     image_url = ""
     if image:
         image_filename = f"users/{image.filename}"
         try:
             s3_client.upload_fileobj(image, S3_BUCKET, image_filename)
-            image_url = f"https://{S3_BUCKET}.s3-{AWS_REGION}.amazonaws.com/{image_filename}"
+            # Format URL S3 standar
+            image_url = f"https://{S3_BUCKET}.s3.amazonaws.com/{image_filename}"
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            print(f"❌ S3 Upload Error: {e}")
+            return jsonify({"error": f"Failed to upload image. Token expired? Error: {str(e)}"}), 500
 
-    # 3️⃣ Simpan user ke database
+    # 3️⃣ Kirim Data User ke API Gateway
     user_data = {
         "name": name,
         "email": email,
@@ -69,22 +86,29 @@ def add_user():
     response = requests.post(API_URL, json=user_data)
 
     if response.status_code == 409:
-        print("❌ API returned 409, email conflict")  # Debugging log
         return jsonify({"error": "Email already exists"}), 409
 
     return redirect(url_for("index"))
 
 @app.route("/users/<int:user_id>/delete", methods=["DELETE"])
 def delete_user(user_id):
-    response = requests.delete(f"{API_URL}/{user_id}")
-
-    if response.status_code == 204:
-        return jsonify({"message": "User deleted successfully"}), 200
-    
     try:
-        return jsonify(response.json()), response.status_code
-    except request.exceptions.JSONDecodeError:
-        return jsonify({"error": "Unexpected empty response"}), response.status_code
+        # Kirim request delete ke API Gateway
+        response = requests.delete(f"{API_URL}/{user_id}")
+
+        if response.status_code == 204:
+            return jsonify({"message": "User deleted successfully"}), 200
+        
+        # Coba parse response JSON dari API Gateway
+        try:
+            return jsonify(response.json()), response.status_code
+        except ValueError:
+            # INI PERBAIKAN UTAMA: Menangkap error jika API Gateway balikin HTML error
+            print(f"❌ Non-JSON response from API: {response.text}")
+            return jsonify({"error": "Backend Error (Non-JSON response)"}), 500
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/users/<int:user_id>", methods=["GET"])
 def get_user(user_id):
@@ -97,7 +121,7 @@ def update_user(user_id):
     response = requests.put(f"{API_URL}/{user_id}", json=data)
 
     if response.status_code == 200:
-        return jsonify({"message": "Used sudah diupdate", "data": response.json()})
+        return jsonify({"message": "User updated", "data": response.json()})
     else:
         return jsonify({"error": "Failed to update user"}), response.status_code
 
