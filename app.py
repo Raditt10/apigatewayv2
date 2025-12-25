@@ -53,27 +53,25 @@ def add_user():
     phone = request.form["phone"]
     image = request.files["image"]
 
-    # 1️⃣ Cek apakah email sudah ada di database via API Gateway
+    # 1. Cek Email (Skip kalau error koneksi biar ga crash)
     try:
         check_response = requests.get(f"{API_URL}?email={email}")
         if check_response.status_code == 409:
             return jsonify({"error": "Email already exists"}), 409
-    except Exception as e:
-        print(f"⚠️ Warning: Skip email check due to error: {e}")
+    except:
+        pass
 
-    # 2️⃣ Upload Gambar ke S3
+    # 2. Upload ke S3
     image_url = ""
     if image:
         image_filename = f"users/{image.filename}"
         try:
             s3_client.upload_fileobj(image, S3_BUCKET, image_filename)
-            # Format URL S3 standar
             image_url = f"https://{S3_BUCKET}.s3.amazonaws.com/{image_filename}"
         except Exception as e:
-            print(f"❌ S3 Upload Error: {e}")
-            return jsonify({"error": f"Failed to upload image. Token expired? Error: {str(e)}"}), 500
+            return jsonify({"error": f"S3 Upload Failed. Token Expired? Error: {str(e)}"}), 500
 
-    # 3️⃣ Kirim Data User ke API Gateway
+    # 3. Simpan ke API Gateway
     user_data = {
         "name": name,
         "email": email,
@@ -83,10 +81,20 @@ def add_user():
         "image_url": image_url,
     }
 
-    response = requests.post(API_URL, json=user_data)
+    try:
+        response = requests.post(API_URL, json=user_data)
+        
+        # ✅ PERBAIKAN: Cek apakah sukses (Code 200 atau 201)
+        if response.status_code not in [200, 201]:
+            # Jika gagal, TAMPILKAN ERROR JSON, jangan redirect!
+            return jsonify({
+                "message": "Gagal menyimpan data ke Backend",
+                "status_code": response.status_code,
+                "error_details": response.text
+            }), response.status_code
 
-    if response.status_code == 409:
-        return jsonify({"error": "Email already exists"}), 409
+    except Exception as e:
+        return jsonify({"error": f"Connection to API Gateway failed: {str(e)}"}), 500
 
     return redirect(url_for("index"))
 
