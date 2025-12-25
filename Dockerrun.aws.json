@@ -1,12 +1,13 @@
 {
   "AWSEBDockerrunVersion": "1",
   "Image": {
-    "Name": "590183978819.dkr.ecr.us-east-1.amazonaws.com/lks/radit:latest",
+    "Name": "IMAGE_PLACEHOLDER",
     "Update": "true"
   },
   "Ports": [
     {
-      "ContainerPort": 5000
+      "ContainerPort": 5000,
+      "HostPort": 80
     }
   ]
 }
