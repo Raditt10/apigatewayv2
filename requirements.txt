@@ -1,6 +1,6 @@
 Flask
-python-dotenv
-boto3
-requests
-werkzeug
 pymysql
+boto3
+python-dotenv
+cryptography
+requests
